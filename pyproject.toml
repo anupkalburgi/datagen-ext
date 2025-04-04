@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"] # Or hatchling, flit_core etc.
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "datagen_ext"
+version = "0.1.0"
+description = "A new Python project: datagen-ext" # Add a brief description
+readme = "README.md"
+requires-python = ">=3.8" # Specify your minimum Python version
+license = {text = "MIT"} # Choose your license: MIT, Apache-2.0, etc. Add license file later.
+authors = [
+  { name = "Your Name", email = "your.email@example.com" }, # Update with your details
+]
+classifiers = [ # Optional: PyPI classifiers
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License", # Match your chosen license
+    "Operating System :: OS Independent",
+]
+# Add your runtime dependencies here as needed
+# Example: dependencies = ["pandas>=2.0", "requests"]
+dependencies = [
+    # Start with minimal dependencies
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",      # For running tests
+    "jupyterlab",  # For notebooks
+    # Add other dev tools like black, ruff, mypy here if desired
+]
+
+# Optional: Define entry points for command-line scripts
+[project.scripts]
+datagen-ext = "datagen_ext.__main__:main" # Example CLI script
+
+# Optional: Project URLs for PyPI
+[project.urls]
+Homepage = "https://github.com/YOUR_USERNAME/datagen-ext" # Update USERNAME and repo name
+Repository = "https://github.com/YOUR_USERNAME/datagen-ext"
+# Bug Tracker = "https://github.com/YOUR_USERNAME/datagen-ext/issues"
+
