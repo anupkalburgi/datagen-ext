@@ -1,0 +1,70 @@
+{
+  "shared_key_generators": {
+    "customer_key_gen": {
+      "intermediate_base": {
+        "name": "_cid_base",
+        "spec": {
+          "colType": "int",
+          "uniqueValues": 1000,
+          "omit": true
+        }
+      },
+      "final_key": {
+        "spec": {
+          "colType": "string",
+          "prefix": "cust_",
+          "baseColumn": "_cid_base"
+        }
+      }
+    },
+    "product_key_gen": {
+      "intermediate_base": {
+        "name": "_pid_base",
+        "spec": { "colType": "int", "uniqueValues": 200, "minValue": 1001, "omit": true}
+      },
+      "final_key": {
+        "spec": { "colType": "string", "format": "prod-%04d", "baseColumn": "_pid_base"}
+      }
+    }
+  },
+  "tables": {
+    "Customers": {
+      "rows": 1000,
+      "partitions": 4,
+      "columns": [
+        {"name": "customer_id", "use_shared_key_gen": "customer_key_gen"},
+          {"name": "name", "type": "string", "options": {"template": "\\w \\w"}, "baseColumn": "_cid_base"},
+        {"name": "email", "type": "string", "options": {"template": "\\w.\\w@\\w.com|\\w@\\w.co.u\\k"}, "baseColumn": "_cid_base"},
+        {"name": "signup_date", "type": "date", "options": {"begin": "2022-01-01", "end": "2024-12-31", "format": "yyyy-MM-dd", "random": true}}
+      ]
+    },
+    "Products": {
+       "rows": 200,
+       "partitions": 2,
+       "columns": [
+         {"name": "product_id", "use_shared_key_gen": "product_key_gen"},
+         {"name": "product_name", "type": "string", "options": {"values": ["Laptop", "Mouse", "Keyboard", "Monitor"]}, "baseColumn": "_pid_base"},
+         {"name": "category", "type": "string", "options": {"values": ["Electronics", "Accessories"], "weights": [7, 3]}, "baseColumn": "_pid_base"},
+         {"name": "price", "type": "float", "options": {"min": 10.0, "max": 2500.0, "step": 0.01, "random": true}}
+      ]
+    },
+    "Orders": {
+      "rows": 5000,
+      "partitions": 8,
+      "columns": [
+        {"name": "order_id", "type": "long", "options": {"expr": "id + 50001"}},
+        {"name": "cust_id", "use_shared_key_gen": "customer_key_gen"},
+        {"name": "prod_id", "use_shared_key_gen": "product_key_gen"},
+        {"name": "order_date", "type": "timestamp", "options": {"begin": "2023-01-01 00:00:00", "end": "2025-01-01 23:59:59", "random": true}},
+        {"name": "quantity", "type": "int", "options": {"min": 1, "max": 5, "random": true}}
+      ]
+    }
+  },
+  "output_format": "parquet",
+  "output_path_prefix": "synthetic_data_deterministic/",
+  "generator_options": {
+      "verbose": false,
+      "randomSeedMethod": "hash_fieldname",
+      "randomSeed": 42
+  }
+}

@@ -11,7 +11,7 @@ A new Python project setup using uv and pyproject.toml.
 
 1.  **Clone the Repository (if not already done):**
     ```bash
-    git clone https://github.com/YOUR_USERNAME/datagen-ext.git # Update URL
+    git clone https://github.com/anupkalburgi/datagen-ext.git # Update URL
     cd datagen-ext
     ```
 
@@ -56,17 +56,31 @@ Tests are written using `pytest`.
     ```
     *To run with more verbose output:* `pytest -v`
 
-## Notebooks
-
-Experimental work and analysis can be found in the `notebooks/` directory. Start Jupyter Lab (requires the 'dev' dependencies to be installed):
-```bash
-# Make sure the venv is activated first!
-jupyter lab
-```
-
 ## IDE Configuration (VS Code / PyCharm)
 
-Use the Python interpreter path found in `.env_info.txt` (`/Users/anup.kalburgi/code/datagen-extended/datagen-ext/venv/bin/python`) to configure your IDE for this project.
+Use the Python interpreter path found in `.env_info.txt` (`datagen-extended/datagen-ext/venv/bin/python`) to configure your IDE for this project.
+
+
+### Sample Run
+```
+datagen-ext -c /Users/anup.kalburgi/code/datagen-extended/datagen-ext/configs/simple_table.json
+2025-04-04 15:55:32 - datagen_ext.__main__ - INFO - Starting data generation process with config: /Users/anup.kalburgi/code/datagen-extended/datagen-ext/configs/simple_table.json
+2025-04-04 15:55:32 - datagen_ext.__main__ - INFO - Configuration loaded and validated successfully from '/Users/anup.kalburgi/code/datagen-extended/datagen-ext/configs/simple_table.json'
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+25/04/04 15:55:34 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2025-04-04 15:55:35 - datagen_ext.generator - INFO - SparkSession initialized successfully.
+2025-04-04 15:55:35 - datagen_ext.generator - INFO - Processing tables in order: ['Users']
+2025-04-04 15:55:35 - datagen_ext.generator - INFO - --- Starting generation for table: Users ---
+2025-04-04 15:55:35 - datagen_ext.generator - INFO - Table 'Users': Building DataFrame...
+2025-04-04 15:55:37 - datagen_ext.generator - INFO - Table 'Users': Successfully built DataFrame with 1000 rows.
+2025-04-04 15:55:37 - datagen_ext.generator - INFO - Table 'Users': Writing parquet data to: /Users/anup.kalburgi/code/datagen-extended/datagen-ext/synthetic_data_deterministic/Users
+2025-04-04 15:55:39 - datagen_ext.generator - INFO - Table 'Users': Finished writing.
+2025-04-04 15:55:40 - datagen_ext.generator - INFO - SparkSession stopped.
+2025-04-04 15:55:40 - datagen_ext.generator - INFO - --- Data generation completed successfully. ---
+(datagen-ext) ➜  datagen-ext git:(master) ✗
+
+```
 
 ## Publishing to PyPI (Future Steps)
 

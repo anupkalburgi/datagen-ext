@@ -1,0 +1,34 @@
+{
+  "shared_key_generators": {
+    "session_key_gen": {
+      "intermediate_base": {"name": "_sid", "spec": {"colType": "long", "uniqueValues": 250, "omit": true}},
+      "final_key": {"spec": {"colType": "string", "format": "sess_%05d", "baseColumn": "_sid"}}
+    }
+  },
+  "tables": {
+    "WebSessions": {
+      "rows": 250,
+      "partitions": 2,
+      "columns": [
+        {"name": "session_id", "use_shared_key_gen": "session_key_gen"},
+        {"name": "ip_address", "type": "string", "options": {"template": "\\n.\\n.\\n.\\n"}, "baseColumn": "_sid"},
+        {"name": "user_agent_info", "type": "string", "options": {
+            "expr": "named_struct('browser', element_at(array('Chrome', 'Firefox', 'Safari', 'Edge'), int(rand()*4)+1), 'os', element_at(array('Windows', 'MacOS', 'Linux'), int(rand()*3)+1))"
+           }, "baseColumn": "_sid"
+        },
+        {"name": "geo_location", "type": "string", "options": {
+            "expr": "named_struct('country_code', element_at(array('US','CA','GB','DE','FR'), int(id % 5)), 'city', named_struct('name', concat('City', char(65+int(rand()*26))), 'zip', format_string('%05d', cast(rand()*99999 as int))))"
+          }, "baseColumn": "ip_address", "baseColumnType": "hash"
+        },
+        {"name": "visited_paths", "type": "string", "options": {
+            "expr": "array(concat('/page', char(65+int(rand()*5))), concat('/product/', cast(rand()*100 as int)), if(rand() > 0.7, '/checkout', '/home'))"
+           }
+        },
+        {"name": "session_start", "type": "timestamp", "options": {"begin": "now-1d", "interval": "1 minute", "random": true}}
+      ]
+    }
+  },
+  "output_format": "parquet",
+  "output_path_prefix": "test_output/nested_structs/",
+  "generator_options": { "randomSeed": 101 }
+}

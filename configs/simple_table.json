@@ -1,0 +1,20 @@
+{
+  "tables": {
+    "Users": {
+      "rows": 1000,
+      "partitions": 4,
+      "columns": [
+        {"name": "name", "type": "string", "options": {"template": "\\w \\w"}},
+        {"name": "email", "type": "string", "options": {"template": "\\w.\\w@\\w.com|\\w@\\w.co.u\\k"}},
+        {"name": "signup_date", "type": "date", "options": {"begin": "2022-01-01", "end": "2024-12-31", "format": "yyyy-MM-dd", "random": true}}
+      ]
+    }
+  },
+  "output_format": "parquet",
+  "output_path_prefix": "synthetic_data_deterministic/",
+  "generator_options": {
+      "verbose": false,
+      "randomSeedMethod": "hash_fieldname",
+      "randomSeed": 42
+  }
+}

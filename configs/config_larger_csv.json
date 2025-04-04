@@ -1,0 +1,24 @@
+{
+  "tables": {
+    "Clickstream": {
+      "rows": 50000, // Larger row count
+      "partitions": 10, // More partitions
+      "columns": [
+        // Using default internal 'id' directly for performance (requires withIdOutput)
+        {"name": "event_id", "type": "long", "baseColumn": "id"}, // Base on default 'id'
+        {"name": "user_id", "type": "long", "options": {"minValue": 1, "maxValue": 10000, "random": true}}, // Simple random long
+        {"name": "event_type", "type": "string", "options": {"values": ["view", "click", "search", "add_to_cart"]}},
+        {"name": "url", "type": "string", "options": {"template": "http://example.com/path/\\l"}}, // Simple template
+        {"name": "event_ts", "type": "timestamp", "options": {"begin": "now-7d", "end": "now", "interval": "1 millisecond", "random": true}}
+      ]
+    }
+  },
+  "output_format": "csv", // Test CSV output
+  "output_path_prefix": "test_output/larger_csv/",
+  "generator_options": {
+    "randomSeed": 303,
+    "seedColumnName": "id", // Explicitly state we rely on 'id'
+    "idOutput": true // <<< Need this to use 'id' as baseColumn
+    // Spark CSV write options could be added via code if needed (e.g., header, delimiter)
+  }
+}
