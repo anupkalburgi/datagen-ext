@@ -4,35 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "datagen_ext"
-version = "0.1.0"
+version = "0.1.19"
 description = "A new Python project: datagen-ext" # Add a brief description
 readme = "README.md"
-requires-python = ">=3.11" # Specify your minimum Python version
-license = {text = "MIT"} # Choose your license: MIT, Apache-2.0, etc. Add license file later.
+requires-python = ">=3.9.21" # Specify your minimum Python version
+license = "MIT" # UPDATED: Use a simple string for the SPDX identifier
 authors = [
   { name = "Your Name", email = "your.email@example.com" }, # Update with your details
 ]
 classifiers = [ # Optional: PyPI classifiers
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License", # Match your chosen license
     "Operating System :: OS Independent",
 ]
 # Add your runtime dependencies here as needed
 # Example: dependencies = ["pandas>=2.0", "requests"]
 dependencies = [
-    "pyspark==3.5.5",
     "dbldatagen==0.4.0.post1",
-    "jmespath>=1.0.1",
-    "numpy>=2.2.4",
-    "pandas>=2.2.3",
-    "pyparsing>=3.2.3",
-    "pyarrow>=19.0.1",
+    "pydantic>=1.10.6",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "pyspark==3.5.5",
     "pytest",      # For running tests
     "jupyterlab",  # For notebooks
+    "pandas>=2.2.3",
+    "jmespath>=1.0.1",
+    "pyparsing>=3.2.3",
     # Add other dev tools like black, ruff, mypy here if desired
 ]
 
@@ -45,4 +43,3 @@ datagen-ext = "datagen_ext.__main__:main" # Example CLI script
 Homepage = "https://github.com/anupkalburgi/datagen-ext" # Update USERNAME and repo name
 Repository = "https://github.com/anupkalburgi/datagen-ext"
 # Bug Tracker = "https://github.com/YOUR_USERNAME/datagen-ext/issues"
-
