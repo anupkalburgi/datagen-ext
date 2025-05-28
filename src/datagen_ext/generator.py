@@ -1,161 +1,286 @@
-import json
-import os
-import sys
-import logging  # Import logging module
+from collections import defaultdict
+from typing import Optional, Dict, Tuple, List
+
 from pyspark.sql import SparkSession
+from datagen_ext.models import DatagenSpec
+
+
+
+import logging # Ensure logging is imported for the main module
 import dbldatagen as dg
-import argparse
 
-# Assuming models are in src/models/config_models.py relative to execution
-# Adjust import path if necessary based on your execution context
-try:
-    from .config_models import DatagenConfig
-except ImportError:
-    # Fallback if running directly from src directory or structure differs
-    try:
-        from .config_models import DatagenConfig
-    except ImportError:
-        print("FATAL ERROR: Could not import DatagenConfig. Ensure models/config_models.py exists and Python path is correct.")
-        sys.exit(1)
-
-# --- Basic Logging Setup ---
-# Configure logging once at the module level or in the main execution block
-# This basic config logs INFO and higher to the console
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-# Get a logger specific to this module
 logger = logging.getLogger(__name__)
-# --- End Logging Setup ---
 
+INTERNAL_ID_COLUMN_NAME = "id"
 
-def generate_data_from_pydantic_config(config_model: DatagenConfig, config_path: str):
-    """
-    Generates synthetic data using a validated Pydantic configuration model.
+# Helper function to identify critical ValueErrors that should propagate
+def is_critical_pk_error(ve: ValueError) -> bool:
+    """Checks if a ValueError message indicates a critical PK configuration error."""
+    msg = str(ve).lower()
+    critical_phrases = [
+        "pk", # Catches "PK ... missing type"
+        "primary key and therefore cannot be nullable"
+    ]
+    return any(phrase in msg for phrase in critical_phrases)
 
-    Args:
-        config_model: A validated DatagenConfig Pydantic object.
-        config_path: The original path of the config file (for context in logs).
-    """
-    # Config already validated, proceed to Spark init and generation
+class Generator:
+    def __init__(self, spark: SparkSession, app_name: str = "DataGen_ClassBased"):
+        """
+        Initializes the Generator.
+        Args:
+            spark: An existing SparkSession.
+            app_name: The name for the Spark application (used if a session were created here).
+        """
+        if spark:
+            self.spark = spark
+            self._created_spark_session = False
+            logger.info("Using provided SparkSession.")
+        else:
+            logger.error("SparkSession cannot be None during Generator initialization.")
+            raise RuntimeError("SparkSession cannot be None")
 
-    # --- 2. Initialize Spark Session ---
-    spark = None
-    try:
-        # Consider making appName more dynamic if needed
-        spark_builder = SparkSession.builder \
-            .appName(f"DataGen_{os.path.basename(config_path)}") \
-            .master("local[*]") # Keep local for now, parameterize for prod
+    def prepare_data_generators(self, config: DatagenSpec, config_source_name: str = "PydanticConfig") \
+            -> Tuple[Dict[str, Optional[dg.DataGenerator]], bool]:
+        """
+        Prepares DataGenerator specifications for each table based on the config.
+        This step does NOT build or write data.
+        Critical PK configuration errors will raise ValueError and halt preparation.
+        Other errors are logged, and the specific table's generator is set to None.
+        Args:
+            config: A DatagenSpec Pydantic object.
+            config_source_name: A name for the configuration source (for logging).
+        Returns:
+            A tuple containing:
+            - A dictionary mapping table names to their configured dbldatagen.DataGenerator objects (or None if prep failed for that table).
+            - True if all specs for all tables were prepared successfully (and no critical errors occurred), False otherwise.
+        """
+        if not self.spark:
+            logger.error("SparkSession is not available in Generator. Cannot prepare data generators.")
+            raise RuntimeError("SparkSession is not available. Cannot prepare data generators.")
 
-        # Add any Spark conf settings needed for production (e.g., memory, shuffle partitions)
-        # spark_builder = spark_builder.config("spark.sql.shuffle.partitions", "...")
+        logger.info(f"Starting data generator preparation for config: {config_source_name}")
+        tables_config = config.tables
+        global_gen_options = config.generator_options if config.generator_options else {}
 
-        spark = spark_builder.getOrCreate()
-        logger.info("SparkSession initialized successfully.")
-    except Exception as e:
-        logger.exception("Fatal Error: Failed to initialize SparkSession.") # .exception includes traceback
-        return # Cannot proceed without Spark
+        prepared_generators: Dict[str, Optional[dg.DataGenerator]] = defaultdict(lambda: None)
+        all_specs_successful = True
 
-    # --- 3. Prepare for Generation (Using validated Pydantic model) ---
-    tables_config = config_model.tables
-    shared_key_generators = config_model.shared_key_generators
-    output_format = config_model.output_format
-    output_path_prefix = config_model.output_path_prefix
-    global_gen_options = config_model.generator_options
+        generation_order = list(tables_config.keys())
+        logger.info(f"Preparing DataGenerator specs for tables in order: {generation_order}")
 
-    generation_order = list(tables_config.keys())
-    logger.info(f"Processing tables in order: {generation_order}")
+        for table_name in generation_order:
+            if table_name not in tables_config:
+                logger.warning(f"Table '{table_name}' listed in generation order but not found in tables config. Skipping.")
+                all_specs_successful = False
+                continue
 
-    # --- 4. Generate Data Table by Table ---
-    all_successful = True
-    for table_name, table_spec in tables_config.items():
-        logger.info(f"--- Starting generation for table: {table_name} ---")
+            table_spec = tables_config[table_name]
+            logger.info(f"--- Preparing DataGenerator spec for table: {table_name} ---")
 
-        rows = table_spec.rows
-        # Safely get default parallelism if partitions not specified
-        try:
-            default_partitions = spark.sparkContext.defaultParallelism
-        except Exception:
-            logger.warning("Could not get default parallelism, defaulting to 4.")
-            default_partitions = 4 # Fallback default
-        partitions = table_spec.partitions if table_spec.partitions is not None else default_partitions
-        columns_spec = table_spec.columns
+            rows = table_spec.number_of_rows
+            try:
+                default_partitions = self.spark.sparkContext.defaultParallelism
+            except Exception as ex:
+                logger.warning(f"Could not get default Spark parallelism for table '{table_name}', defaulting to 4. Error: {ex}")
+                default_partitions = 4
 
-        try:
-            # Initialize DataGenerator
-            data_gen = (dg.DataGenerator(sparkSession=spark,
-                                         name=f"{table_name}_spec",
-                                         rows=rows,
-                                         partitions=partitions,
-                                         **global_gen_options) # Pass generator options
-                       )
-            defined_intermediate_cols = set()
-            logger.debug(f"Initialized DataGenerator for {table_name} with {rows} rows, {partitions} partitions.")
+            partitions = table_spec.partitions if table_spec.partitions is not None else default_partitions
+            columns_spec = getattr(table_spec, 'columns', [])
 
-            # --- Define columns ---
-            for col_def in columns_spec:
-                col_name = col_def.name # Already validated by Pydantic
-                shared_key_gen_name = col_def.use_shared_key_gen
+            try:
+                data_gen = dg.DataGenerator(sparkSession=self.spark,
+                                            name=f"{table_name}_spec_from_{config_source_name}",
+                                            rows=rows,
+                                            partitions=partitions,
+                                            **global_gen_options)
 
-                if shared_key_gen_name:
-                    # Shared key generator details already validated
-                    key_gen_spec = shared_key_generators[shared_key_gen_name]
-                    inter_base_col_name = key_gen_spec.intermediate_base.name
-                    inter_base_col_spec_dict = key_gen_spec.intermediate_base.spec
-                    final_key_col_spec_dict = key_gen_spec.final_key.spec
+                for col_def in columns_spec:
+                    col_name = getattr(col_def, 'name', 'unknown_column')
+                    final_kwargs = {}
+                    is_primary = getattr(col_def, 'primary', False)
+                    col_type = getattr(col_def, 'type', None)
+                    is_nullable = getattr(col_def, 'nullable', False) # Default to False if not present
 
-                    # 1. Add INTERMEDIATE base column
-                    if inter_base_col_name not in defined_intermediate_cols:
-                        logger.debug(f"Table '{table_name}': Defining intermediate base '{inter_base_col_name}'")
-                        data_gen = data_gen.withColumn(colName=inter_base_col_name, **inter_base_col_spec_dict)
-                        defined_intermediate_cols.add(inter_base_col_name)
+                    if is_primary:
+                        # Explicit check for nullable primary key (Pydantic should catch this first, but defensive check here)
+                        if is_nullable is True: # Explicitly check for True
+                            msg = f"Column '{col_name}' in table '{table_name}' is a primary key and therefore cannot be nullable (nullable=True is not allowed)."
+                            logger.error(msg)
+                            raise ValueError(msg)
 
-                    # 2. Add FINAL key column
-                    logger.debug(f"Table '{table_name}': Defining final key column '{col_name}' based on '{inter_base_col_name}'")
-                    data_gen = data_gen.withColumn(colName=col_name, **final_key_col_spec_dict)
+                        # Check for missing type for primary key
+                        if not col_type:
+                            msg = f"PK '{col_name}' in table '{table_name}' missing type."
+                            logger.error(msg)
+                            raise ValueError(msg)
 
+                        logger.info(f"Table '{table_name}': Column '{col_name}' is PRIMARY KEY. Deriving from '{INTERNAL_ID_COLUMN_NAME}'.")
+                        pk_kwargs = getattr(col_def, 'options', {}).copy()
+                        pk_kwargs['colType'] = col_type
+                        pk_kwargs['baseColumn'] = INTERNAL_ID_COLUMN_NAME
+
+                        if col_type == "string":
+                            pk_kwargs['format'] = pk_kwargs.get('format', "0x%013X")
+                            logger.debug(f"PK '{col_name}' (string) using base '{INTERNAL_ID_COLUMN_NAME}', format '{pk_kwargs['format']}'")
+                        elif col_type not in ["int", "long", "integer", "bigint", "short", "byte"]:
+                            logger.warning(f"PK '{col_name}' type '{col_type}' based on '{INTERNAL_ID_COLUMN_NAME}'.")
+
+                        conflicting_opts_for_pk = ['min', 'max', 'uniqueValues', 'random', 'baseValue',
+                                                   'template', 'values', 'dataRange', 'distribution', 'expr']
+                        for opt_key in conflicting_opts_for_pk:
+                            if opt_key in pk_kwargs:
+                                logger.debug(f"For PK '{col_name}', option '{opt_key}' may be ignored due to baseColumn logic.")
+
+                        col_omit = getattr(col_def, 'omit', None)
+                        if col_omit is not None: pk_kwargs['omit'] = col_omit
+                        final_kwargs = pk_kwargs
+                    else:
+                        regular_kwargs = getattr(col_def, 'options', {}).copy()
+                        if col_type: regular_kwargs['colType'] = col_type
+                        base_col = getattr(col_def, 'baseColumn', None)
+                        if base_col: regular_kwargs['baseColumn'] = base_col
+                        base_col_type = getattr(col_def, 'baseColumnType', None)
+                        if base_col_type: regular_kwargs['baseColumnType'] = base_col_type
+                        col_omit = getattr(col_def, 'omit', None)
+                        if col_omit is not None: regular_kwargs['omit'] = col_omit
+                        final_kwargs = regular_kwargs
+
+                    logger.debug(f"Table '{table_name}': Defining column '{col_name}' with spec: {final_kwargs}")
+                    data_gen = data_gen.withColumn(colName=col_name, **final_kwargs)
+
+                prepared_generators[table_name] = data_gen
+                logger.info(f"--- Successfully prepared DataGenerator spec for table: {table_name} ---")
+
+            except ValueError as ve:
+                if is_critical_pk_error(ve):
+                    logger.error(f"Critical PK configuration error for table '{table_name}': {ve}. Halting preparation.")
+                    raise # Re-raise critical PK ValueErrors to be caught by the caller
                 else:
-                    # Regular column definition
-                    logger.debug(f"Table '{table_name}': Defining regular column '{col_name}'")
-                    kwargs = col_def.options.copy() if col_def.options else {} # Start with options dict
-                    if col_def.type: kwargs['colType'] = col_def.type
-                    if col_def.baseColumn: kwargs['baseColumn'] = col_def.baseColumn
-                    if col_def.baseColumnType: kwargs['baseColumnType'] = col_def.baseColumnType
-                    if col_def.omit: kwargs['omit'] = col_def.omit
+                    # Handle other ValueErrors locally
+                    logger.exception(f"--- Handled ValueError during DataGenerator spec preparation for table '{table_name}' ---")
+                    prepared_generators[table_name] = None
+                    all_specs_successful = False
+            except Exception as e:
+                logger.exception(f"--- General ERROR during DataGenerator spec preparation for table '{table_name}' ---")
+                prepared_generators[table_name] = None
+                all_specs_successful = False
 
-                    data_gen = data_gen.withColumn(colName=col_name, **kwargs)
+        if not all_specs_successful: # This will be true if non-critical errors occurred
+            logger.error(f"--- DataGenerator spec preparation completed WITH NON-CRITICAL ERRORS for config: {config_source_name} ---")
+        elif not prepared_generators and generation_order : # No generators but tables were expected
+            logger.warning(f"--- DataGenerator spec preparation completed, but no generators were successfully created for config: {config_source_name} ---")
+        else:
+            logger.info(f"--- DataGenerator spec preparation completed successfully for config: {config_source_name} ---")
 
-            # --- 5. Build and Save DataFrame ---
-            logger.info(f"Table '{table_name}': Building DataFrame...")
-            df = data_gen.build()
-            logger.info(f"Table '{table_name}': Successfully built DataFrame with {df.count()} rows.")
+        return prepared_generators, all_specs_successful
 
-            # Ensure output path is absolute or handle relative paths carefully
-            # For prod, usually absolute paths (HDFS, S3, ADLS) are preferred
-            output_path = os.path.abspath(os.path.join(output_path_prefix, table_name))
-            logger.info(f"Table '{table_name}': Writing {output_format} data to: {output_path}")
-            # Consider adding options for partitioning, etc. for production writes
-            df.write.format(output_format).mode("overwrite").save(output_path)
-            logger.info(f"Table '{table_name}': Finished writing.")
+    def write_prepared_data(self,
+                            prepared_generators: Dict[str, Optional[dg.DataGenerator]],
+                            output_format: str,
+                            output_path_prefix: str,
+                            config_source_name: str = "PydanticConfig") -> bool:
+        if not self.spark:
+            logger.error("SparkSession is not available. Cannot write data.")
+            return False
 
-        except Exception as e:
-            # Log the specific error with traceback for the failing table
-            logger.exception(f"--- FATAL ERROR during generation or writing for table '{table_name}' ---")
-            all_successful = False
-            break # Stop processing further tables
+        if not prepared_generators:
+            logger.warning(f"No prepared data generators to write for config: {config_source_name}. Skipping write phase.")
+            return True
 
-    # --- 6. Cleanup ---
-    if spark:
+        logger.info(f"Starting data writing from prepared generators for config: {config_source_name}")
+        all_writes_successful = True
+        attempted_any_write = False
+
+        for table_name, data_gen in prepared_generators.items():
+            if data_gen is None:
+                logger.warning(f"Skipping write for table '{table_name}' as its DataGenerator spec was not prepared successfully.")
+                continue
+
+            attempted_any_write = True
+            logger.info(f"--- Starting data build and write for table: {table_name} ---")
+            try:
+                logger.info(f"Table '{table_name}': Building DataFrame...")
+                df = data_gen.build()
+
+                requested_rows = data_gen.rowCount
+                actual_row_count = df.count()
+                logger.info(f"Table '{table_name}': Built DataFrame with {actual_row_count} rows (requested: {requested_rows}).")
+
+                if actual_row_count == 0 and requested_rows > 0:
+                    logger.warning(f"Table '{table_name}': Requested {requested_rows} rows but built 0. Check definitions.")
+
+                table_output_path = f"{output_path_prefix}/{table_name}"
+                logger.info(f"Table '{table_name}': Writing {output_format} data to: {table_output_path}")
+                df.write.format(output_format).mode("overwrite").save(table_output_path)
+                logger.info(f"Table '{table_name}': Finished writing.")
+
+            except Exception as e:
+                logger.exception(f"--- FATAL ERROR during build or write for table '{table_name}' ---")
+                all_writes_successful = False
+
+        if not attempted_any_write and prepared_generators:
+            logger.info(f"--- No valid data generators found to write for config: {config_source_name} ---")
+            # If all generators were None, and we didn't attempt any write, this is not a write failure.
+            # The success of this method depends on whether writes were *attempted* and failed.
+            return True
+
+
+        if all_writes_successful:
+            logger.info(f"--- Data writing completed successfully for attempted tables for config: {config_source_name} ---")
+        else:
+            logger.error(f"--- Data writing completed WITH ERRORS for config: {config_source_name} ---")
+
+        return all_writes_successful
+
+    def generate_and_write_data(self, config: DatagenSpec, config_source_name: str = "PydanticConfig") -> bool:
+        if not self.spark:
+            logger.error("SparkSession is not available in Generator. Cannot proceed.")
+            return False
+
+        logger.info(f"Starting combined data generation and writing for config: {config_source_name}")
+
         try:
-            spark.stop()
-            logger.info("SparkSession stopped.")
-        except Exception:
-            logger.warning("Exception occurred while stopping SparkSession.", exc_info=True)
+            validated_output_path = config.validate_output_path(config)
+            logger.info(f"Using validated output path prefix: {validated_output_path}")
+        except ValueError as ve: # Catch validation error from get_validated_output_path
+            logger.error(f"Invalid output_path_prefix in config '{config_source_name}': {ve}. Halting.")
+            return False
+        except AttributeError: # Catch if get_validated_output_path doesn't exist on config
+            logger.error(f"The 'config' object of type '{type(config).__name__}' does not have 'get_validated_output_path' method. Ensure it's the correct DatagenSpec model. Halting.")
+            return False
 
+        try:
+            prepared_generators_map, overall_prep_success = self.prepare_data_generators(config, config_source_name)
+        except ValueError as ve_prep: # Catch critical ValueErrors propagated from prepare_data_generators
+            logger.error(f"Critical error during data generator preparation for config '{config_source_name}': {ve_prep}. Halting.")
+            return False
 
-    if all_successful:
-        logger.info("--- Data generation completed successfully. ---")
-    else:
-        logger.error("--- Data generation completed with errors. ---")
+        if not overall_prep_success: # Handles cases where non-critical errors occurred but didn't propagate
+            failed_tables = [table for table, gen in prepared_generators_map.items() if gen is None]
+            logger.error(f"Data generator spec preparation failed for one or more tables in config '{config_source_name}'. "
+                         f"Failed tables (if any specific ones identified): {failed_tables}. "
+                         "Halting before write phase.")
+            return False
+
+        if not prepared_generators_map and list(config.tables.keys()): # Check if tables were expected but none prepared
+            logger.warning(f"No data generators were successfully prepared for config '{config_source_name}', though tables were defined. Nothing to write.")
+            return True # Technically no failure in prep or write if nothing was actionable.
+
+        write_success = self.write_prepared_data(
+            prepared_generators_map,
+            config.output_format,
+            validated_output_path,
+            config_source_name
+        )
+
+        if write_success:
+            logger.info(f"Combined data generation and writing completed successfully for config: {config_source_name}")
+        else:
+            logger.error(f"Combined data generation and writing failed during the write phase for config: {config_source_name}")
+
+        return write_success
