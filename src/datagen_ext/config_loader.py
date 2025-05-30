@@ -109,19 +109,3 @@ class ConfigLoader:
 
         return cls.from_json_string(json_string, model)
 
-
-# def main():
-#     print("\n--- Loading config from file ---")
-#     dummy_file_path = "/Users/anup.kalburgi/code/datagen-extended/datagen-ext/configs/sample_config_valid.json"
-#     try:
-#         config_from_file = ConfigLoader.from_file(dummy_file_path)
-#         print(f"Successfully loaded config from file '{dummy_file_path}':")
-#         print(config_from_file.model_dump_json(indent=2))
-#         print(f"Output path prefix from file: {config_from_file.output_path_prefix}")
-#
-#     except Exception as e:
-#         print(f"Error: {e}")
-#     print("-" * 30)
-#
-# if __name__ == "__main__":
-#     main()

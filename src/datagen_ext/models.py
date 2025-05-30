@@ -70,12 +70,21 @@ class DatagenSpec(BaseModel):
         if len(parts) == 3 and all(part.strip() for part in parts):
             is_three_level_namespace = True
 
-        if not (starts_with_volume or is_three_level_namespace):
+        # Condition 3: Relative path
+        is_relative_path = not (path.startswith('/') or path.startswith('\\'))
+
+        if not (starts_with_volume or is_three_level_namespace or is_relative_path):
             raise ValueError(
                 f"output_path_prefix '{path}' is invalid. "
-                "It must either start with '/Volume' or be a three-level namespace "
-                "(e.g., 'your_catalog.your_schema.your_table')."
+                "It must either start with '/Volume', be a three-level namespace "
+                "(e.g., 'your_catalog.your_schema.your_table'), or be a relative path."
             )
+
+        if is_relative_path:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Using local relative path: {path}. Data will be written to the local filesystem.")
+
         return path
 
     def display_all_tables(self):
@@ -83,7 +92,7 @@ class DatagenSpec(BaseModel):
         Display all tables with columns in a user-friendly way using Databricks or IPython display.
         """
         for table_name, table_def in self.tables.items():
-            print(f"\nTable: {table_name}")
+            print(f"\tTable: {table_name}")
             print(f"\tOutput Path/Table: {self.output_path_prefix}{table_name}")
             df = pd.DataFrame([col.dict() for col in table_def.columns])
             display(df)
