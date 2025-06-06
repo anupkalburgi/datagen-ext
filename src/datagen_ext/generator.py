@@ -1,9 +1,9 @@
 from collections import defaultdict
-from typing import Optional, Dict, Tuple, List
+from typing import Optional, Dict, Tuple, Union
+import posixpath
 
 from pyspark.sql import SparkSession
-from datagen_ext.models import DatagenSpec
-
+from datagen_ext.models import DatagenSpec, UCSchemaTarget, FilePathTarget
 
 
 import logging # Ensure logging is imported for the main module
@@ -150,7 +150,7 @@ class Generator:
                         if col_omit is not None: regular_kwargs['omit'] = col_omit
                         final_kwargs = regular_kwargs
 
-                    logger.debug(f"Table '{table_name}': Defining column '{col_name}' with spec: {final_kwargs}")
+                    logger.info(f"Table '{table_name}': Defining column '{col_name}' with spec: {final_kwargs}")
                     data_gen = data_gen.withColumn(colName=col_name, **final_kwargs)
 
                 prepared_generators[table_name] = data_gen
@@ -181,8 +181,7 @@ class Generator:
 
     def write_prepared_data(self,
                             prepared_generators: Dict[str, Optional[dg.DataGenerator]],
-                            output_format: str,
-                            output_path_prefix: str,
+                            output_destination: Union[UCSchemaTarget, FilePathTarget],
                             config_source_name: str = "PydanticConfig") -> bool:
         if not self.spark:
             logger.error("SparkSession is not available. Cannot write data.")
@@ -214,10 +213,14 @@ class Generator:
                 if actual_row_count == 0 and requested_rows > 0:
                     logger.warning(f"Table '{table_name}': Requested {requested_rows} rows but built 0. Check definitions.")
 
-                table_output_path = f"{output_path_prefix}/{table_name}"
-                logger.info(f"Table '{table_name}': Writing {output_format} data to: {table_output_path}")
-                df.write.format(output_format).mode("overwrite").save(table_output_path)
-                logger.info(f"Table '{table_name}': Finished writing.")
+                if isinstance(output_destination, FilePathTarget):
+                    op_full_path = posixpath.join(output_destination.base_path, table_name)
+                    df.write.format(output_destination.output_format).save(op_full_path)
+                elif isinstance(output_destination, UCSchemaTarget):
+                    op_table = f"{output_destination.catalog}.{output_destination.schema_}.{table_name}"
+                    df.write.mode("overwrite").saveAsTable(op_table)
+                else:
+                    raise ValueError(f"Output destination must be of type {UCSchemaTarget} or {FilePathTarget}")
 
             except Exception as e:
                 logger.exception(f"--- FATAL ERROR during build or write for table '{table_name}' ---")
@@ -245,11 +248,7 @@ class Generator:
         logger.info(f"Starting combined data generation and writing for config: {config_source_name}")
 
         try:
-            validated_output_path = config.validate_output_path(config)
-            logger.info(f"Using validated output path prefix: {validated_output_path}")
-        except ValueError as ve: # Catch validation error from get_validated_output_path
-            logger.error(f"Invalid output_path_prefix in config '{config_source_name}': {ve}. Halting.")
-            return False
+            config.finalize()
         except AttributeError: # Catch if get_validated_output_path doesn't exist on config
             logger.error(f"The 'config' object of type '{type(config).__name__}' does not have 'get_validated_output_path' method. Ensure it's the correct DatagenSpec model. Halting.")
             return False
@@ -273,8 +272,7 @@ class Generator:
 
         write_success = self.write_prepared_data(
             prepared_generators_map,
-            config.output_format,
-            validated_output_path,
+            config.output_destination,
             config_source_name
         )
 

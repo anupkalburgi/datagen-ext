@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "datagen_ext"
-version = "0.0.1"
+version = "0.0.19"
 description = "A new Python project: datagen-ext" # Add a brief description
 readme = "README.md"
 requires-python = ">=3.9.21" # Specify your minimum Python version
@@ -20,7 +20,7 @@ classifiers = [ # Optional: PyPI classifiers
 # Example: dependencies = ["pandas>=2.0", "requests"]
 dependencies = [
     "dbldatagen==0.4.0.post1",
-    "pydantic>=1.10.6",
+    "pydantic==2.8.2",
 ]
 
 [project.optional-dependencies]

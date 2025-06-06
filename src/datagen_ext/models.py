@@ -1,7 +1,34 @@
-from typing import List, Dict, Optional, Any, Union, Literal, Type, TypeVar
-from pydantic import root_validator, BaseModel, ValidationError
+from typing import List, Dict, Optional, Any, Literal, Union
+from pydantic import BaseModel, model_validator, field_validator
 import pandas as pd
-from IPython.display import display
+from IPython.display import display, HTML
+import os
+import logging
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+class PathType(Enum):
+    UC_TABLE = "Unity Catalog Table"
+    UC_VOLUME = "Unity Catalog Volume"
+    RELATIVE = "Relative Path"
+    ABSOLUTE_NON_UC = "Absolute Non-UC Path" # Covers DBFS, local absolute, etc.
+    UNKNOWN = "Unknown or Invalid Path Structure"
+
+# Allowed (PathType, output_format_lowercase) combinations
+_OFF_DB_STRICT_ALLOWED_COMBINATIONS = {
+    (PathType.RELATIVE, "delta"),
+    (PathType.RELATIVE, "parquet"),
+    (PathType.RELATIVE, "csv"),
+    # Add more formats like orc, json, text as needed
+}
+
+_DATABRICKS_COMPATIBLE_ALLOWED_COMBINATIONS = {
+    (PathType.UC_TABLE, "delta"),
+    (PathType.UC_VOLUME, "parquet"), 
+    (PathType.UC_VOLUME, "csv"),
+    # Add more formats like orc, json, text as needed
+}
 
 
 DbldatagenBasicType = Literal[
@@ -14,36 +41,21 @@ DbldatagenBasicType = Literal[
 class ColumnDefinition(BaseModel):
     name: str
     type: Optional[DbldatagenBasicType] = None
-    primary: bool = False  # For custom primary key logic/validation
+    primary: bool = False
     options: Optional[Dict[str, Any]] = {}
-    nullable: Optional[bool] = False  # New field: specifies if the column can contain nulls
-    omit: Optional[bool] = False  # dbldatagen option to omit column from final output
+    nullable: Optional[bool] = False
+    omit: Optional[bool] = False
     baseColumn: Optional[str] = "id"
-    baseColumnType: Optional[str] = "auto"  # Type of base column(s) if not obvious
+    baseColumnType: Optional[str] = "auto"
 
-
-    @root_validator(skip_on_failure=True)
-    def check_column_constraints(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        primary = values.get('primary', False)
-        options = values.get('options', {})
-        nullable = values.get('nullable', False)
-        name = values.get('name', '<unknown>')
-
-        # Constraint 1: primary columns can't have min/max options
-        if primary and options:
-            if 'min' in options or 'max' in options:
-                raise ValueError(
-                    f"Column '{name}' is marked as primary and has 'min' or 'max' in options. "
-                    "This conflicts with the custom validation rule."
-                )
-
-        # Constraint 2: primary columns can't be nullable
-        if primary and nullable:
-            raise ValueError(
-                f"Column '{name}' is a primary key and therefore cannot be nullable (nullable=True is not allowed)."
-            )
-
-        return values
+    @model_validator(mode='after')
+    def check_constraints(self):
+        if self.primary:
+            if 'min' in self.options or 'max' in self.options:
+                raise ValueError(f"Primary column '{self.name}' cannot have min/max options.")
+            if self.nullable:
+                raise ValueError(f"Primary column '{self.name}' cannot be nullable.")
+        return self
 
 
 class TableDefinition(BaseModel):
@@ -52,48 +64,102 @@ class TableDefinition(BaseModel):
     columns: List[ColumnDefinition]
 
 
+# Note: There is no way to specify the per table output.
+# One will have to create a different config for each schema
+class UCSchemaTarget(BaseModel):
+    catalog: str
+    schema_: str 
+    output_format: str = "delta" # Default to delta for UC Schema
+
+    @field_validator('catalog', 'schema_', mode='after')
+    def validate_identifiers(cls, v):
+        if not v.strip():
+            raise ValueError("Identifier must be non-empty.")
+        if not v.isidentifier():
+            logger.warning(f"'{v}' is not a basic Python identifier. Ensure validity for Unity Catalog.")
+        return v.strip()
+
+    def __str__(self):
+        return f"{self.catalog}.{self.schema_} (Format: {self.output_format}, Type: UC Table)"
+
+
+class FilePathTarget(BaseModel):
+    base_path: str
+    output_format: Literal["csv", "parquet"]  # No default, must be specified
+
+    @field_validator('base_path', mode='after')
+    def validate_base_path(cls, v):
+        if not v.strip():
+            raise ValueError("base_path must be non-empty.")
+        return v.strip()
+
+    def __str__(self):
+        return f"{self.base_path} (Format: {self.output_format}, Type: File Path)"
+
+
 class DatagenSpec(BaseModel):
     tables: Dict[str, TableDefinition]
-    output_format: str = "parquet"
-    output_path_prefix: str = "synthetic_data_pydantic/" # Default value
+    output_destination: Optional[Union[UCSchemaTarget, FilePathTarget]] = None
     generator_options: Optional[Dict[str, Any]] = {}
+    intended_for_databricks: Optional[bool] = None
 
-    def validate_output_path(cls, values):
-        path = values.output_path_prefix
+    @staticmethod
+    def _is_running_on_databricks() -> bool:
+        return "DATABRICKS_RUNTIME_VERSION" in os.environ
 
-        # Condition 1: Starts with /Volume
-        starts_with_volume = path.startswith("/Volume")
+    @staticmethod
+    def _determine_path_type(path_prefix: str) -> PathType:
+        path = path_prefix.strip()
+        if len(path.split('.')) == 3:
+            return PathType.UC_TABLE
+        if path.startswith("/Volumes/"):
+            return PathType.UC_VOLUME
+        if path.startswith('/') or path.startswith('\\') or (len(path) > 1 and path[1] == ':'):
+            return PathType.ABSOLUTE_NON_UC
+        return PathType.RELATIVE
 
-        # Condition 2: Three-level namespace
-        is_three_level_namespace = False
-        parts = path.split('.')
-        if len(parts) == 3 and all(part.strip() for part in parts):
-            is_three_level_namespace = True
+    @model_validator(mode='before')
+    def validate_paths_and_formats(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        output = values.get("output_destination")
+        intended = values.get("intended_for_databricks") or cls._is_running_on_databricks()
 
-        # Condition 3: Relative path
-        is_relative_path = not (path.startswith('/') or path.startswith('\\'))
+        if isinstance(output, FilePathTarget):
+            path_type = cls._determine_path_type(output.base_path)
+            fmt = output.output_format.lower()
+            allowed = {
+                PathType.UC_VOLUME, PathType.RELATIVE, PathType.ABSOLUTE_NON_UC
+            }
+            if path_type not in allowed:
+                raise ValueError(f"Invalid path type '{path_type.value}' for FilePathTarget")
+            values["path_type"] = path_type
 
-        if not (starts_with_volume or is_three_level_namespace or is_relative_path):
-            raise ValueError(
-                f"output_path_prefix '{path}' is invalid. "
-                "It must either start with '/Volume', be a three-level namespace "
-                "(e.g., 'your_catalog.your_schema.your_table'), or be a relative path."
-            )
+        elif isinstance(output, UCSchemaTarget):
+            path_type = PathType.UC_TABLE
+            values["path_type"] = path_type
 
-        if is_relative_path:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Using local relative path: {path}. Data will be written to the local filesystem.")
+        return values
 
-        return path
+    def finalize(self) -> None:
+        if self.output_destination is None:
+            raise ValueError("output_destination must be specified before finalization.")
 
     def display_all_tables(self):
-        """
-        Display all tables with columns in a user-friendly way using Databricks or IPython display.
-        """
         for table_name, table_def in self.tables.items():
-            print(f"\tTable: {table_name}")
-            print(f"\tOutput Path/Table: {self.output_path_prefix}{table_name}")
-            df = pd.DataFrame([col.dict() for col in table_def.columns])
-            display(df)
+            print(f"Table: {table_name}")
 
+            if self.output_destination:
+                output = f"{self.output_destination}"
+                display(HTML(f"<strong>Output destination:</strong> {output}"))
+            else:
+                display(HTML(
+                    "<strong>Output destination:</strong> "
+                    "<span style='color: red; font-weight: bold;'>None</span><br>"
+                    "<span style='color: gray;'>Set it using the <code>output_destination</code> attribute on your "
+                    "<code>DatagenSpec</code> object (e.g., <code>my_spec.output_destination = UCSchemaTarget(...)</code>).</span>"
+                ))
+
+            df = pd.DataFrame([col.dict() for col in table_def.columns])
+            try:
+                display(df)
+            except NameError:
+                print(df.to_string())

@@ -273,11 +273,9 @@ class DatabricksUCSpecGenerator(AbstractSpecGenerator):
                 default_number_of_rows=5000,
                 default_partitions=4
             )
-            tables_def[table] = table_definition_model
+            table_name = table.split(".")[-1]
+            tables_def[table_name] = table_definition_model
 
-        config_obj = DatagenSpec(
-            tables=tables_def,
-            output_format="parquet",
-            output_path_prefix="",
-        )
+        # Note: The destination is left empty so that it does not confuse the user. Find a way to notify user of that
+        config_obj = DatagenSpec(tables=tables_def)
         return config_obj
