@@ -3,16 +3,17 @@ from datagen_ext.errors import SpecGenerationError
 from datagen_ext.models import ColumnDefinition, DatagenSpec, TableDefinition
 from datagen_ext.spec_generators import AbstractSpecGenerator
 
+
 class EmployeeSpecGenerator(AbstractSpecGenerator):
     """
     A static generator for employee dataset that creates a predefined schema
     with common employee-related fields.
     """
-    
+
     def __init__(self, number_of_rows: int = 1000, partitions: Optional[int] = 4):
         """
         Initialize the EmployeeSpecGenerator.
-        
+
         Args:
             number_of_rows: Number of rows to generate (default: 1000)
             partitions: Number of partitions for Spark (default: 4)
@@ -26,61 +27,56 @@ class EmployeeSpecGenerator(AbstractSpecGenerator):
         """
         columns = [
             ColumnDefinition(
-                name="employee_id",
-                type="int",
-                primary=True,
-                nullable=False
+                name="employee_id", type="int", primary=True, nullable=False
             ),
             ColumnDefinition(
-                name="first_name",
-                type="string",
-                options={
-                    "template": "\\w{5,10}"
-                }
+                name="first_name", type="string", options={"template": "\\w{5,10}"}
             ),
             ColumnDefinition(
-                name="last_name",
-                type="string",
-                options={
-                    "template": "\\w{5,10}"
-                }
+                name="last_name", type="string", options={"template": "\\w{5,10}"}
             ),
             ColumnDefinition(
-                name="email",
-                type="string",
-                options={
-                    "template": "\\w.\\w@\\w.com"
-                }
+                name="email", type="string", options={"template": "\\w.\\w@\\w.com"}
             ),
             ColumnDefinition(
                 name="department",
                 type="string",
                 options={
-                    "values": ["Engineering", "Sales", "Marketing", "HR", "Finance", "Operations"]
-                }
+                    "values": [
+                        "Engineering",
+                        "Sales",
+                        "Marketing",
+                        "HR",
+                        "Finance",
+                        "Operations",
+                    ]
+                },
             ),
             ColumnDefinition(
                 name="job_title",
                 type="string",
                 options={
                     "values": [
-                        "Software Engineer", "Senior Engineer", "Engineering Manager",
-                        "Sales Representative", "Sales Manager",
-                        "Marketing Specialist", "Marketing Manager",
-                        "HR Specialist", "HR Manager",
-                        "Financial Analyst", "Finance Manager",
-                        "Operations Specialist", "Operations Manager"
+                        "Software Engineer",
+                        "Senior Engineer",
+                        "Engineering Manager",
+                        "Sales Representative",
+                        "Sales Manager",
+                        "Marketing Specialist",
+                        "Marketing Manager",
+                        "HR Specialist",
+                        "HR Manager",
+                        "Financial Analyst",
+                        "Finance Manager",
+                        "Operations Specialist",
+                        "Operations Manager",
                     ]
-                }
+                },
             ),
             ColumnDefinition(
                 name="salary",
                 type="decimal",
-                options={
-                    "min": 50000,
-                    "max": 200000,
-                    "precision": 2
-                }
+                options={"min": 50000, "max": 200000, "precision": 2},
             ),
             ColumnDefinition(
                 name="hire_date",
@@ -89,8 +85,8 @@ class EmployeeSpecGenerator(AbstractSpecGenerator):
                     "begin": "2020-01-01",
                     "end": "2024-12-31",
                     "format": "yyyy-MM-dd",
-                    "random": True
-                }
+                    "random": True,
+                },
             ),
             # The active field did fail locally with
             # pyspark.errors.exceptions.captured.AnalysisException: [DATATYPE_MISMATCH.DATA_DIFF_TYPES] Cannot resolve "CASE WHEN (_scaled_code59 <= 0.6666666666666666) THEN true WHEN (_scaled_code59 <= 1.0) THEN false ELSE {values[-1]} END" due to data type mismatch: Input to `casewhen` should all be the same type, but it's ["BOOLEAN", "BOOLEAN", "STRING"].; line 1 pos 1;
@@ -104,39 +100,41 @@ class EmployeeSpecGenerator(AbstractSpecGenerator):
                 type="boolean",
                 options={
                     "values": [True, False],
-                    "weights": [9, 1]  # 90% active, 10% inactive
-                }
+                    "weights": [9, 1],  # 90% active, 10% inactive
+                },
             ),
             ColumnDefinition(
                 name="manager_id",
                 type="int",
                 options={
                     "baseColumn": "employee_id",
-                    "omit": 0.1  # 10% chance of being null (no manager)
-                }
-            )
+                    "omit": 0.1,  # 10% chance of being null (no manager)
+                },
+            ),
         ]
 
         return TableDefinition(
             number_of_rows=self.number_of_rows,
             partitions=self.partitions,
-            columns=columns
+            columns=columns,
         )
 
     def generate_spec(self) -> DatagenSpec:
         """
         Generates a DatagenSpec for the employee dataset.
-        
+
         Returns:
             DatagenSpec: A specification for generating employee data
         """
         try:
             employee_table = self._get_employee_table_definition()
-            
+
             config_obj = DatagenSpec(
                 tables={"employees": employee_table},
             )
             return config_obj
-            
+
         except Exception as e:
-            raise SpecGenerationError(f"Failed to generate employee specification: {str(e)}") from e 
+            raise SpecGenerationError(
+                f"Failed to generate employee specification: {str(e)}"
+            ) from e

@@ -8,12 +8,14 @@ from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+
 class PathType(Enum):
     UC_TABLE = "Unity Catalog Table"
     UC_VOLUME = "Unity Catalog Volume"
     RELATIVE = "Relative Path"
-    ABSOLUTE_NON_UC = "Absolute Non-UC Path" # Covers DBFS, local absolute, etc.
+    ABSOLUTE_NON_UC = "Absolute Non-UC Path"  # Covers DBFS, local absolute, etc.
     UNKNOWN = "Unknown or Invalid Path Structure"
+
 
 # Allowed (PathType, output_format_lowercase) combinations
 _OFF_DB_STRICT_ALLOWED_COMBINATIONS = {
@@ -25,16 +27,28 @@ _OFF_DB_STRICT_ALLOWED_COMBINATIONS = {
 
 _DATABRICKS_COMPATIBLE_ALLOWED_COMBINATIONS = {
     (PathType.UC_TABLE, "delta"),
-    (PathType.UC_VOLUME, "parquet"), 
+    (PathType.UC_VOLUME, "parquet"),
     (PathType.UC_VOLUME, "csv"),
     # Add more formats like orc, json, text as needed
 }
 
 
 DbldatagenBasicType = Literal[
-    "string", "int", "long", "float", "double", "decimal",
-    "boolean", "date", "timestamp", "short", "byte", "binary",
-    "integer", "bigint", "tinyint"
+    "string",
+    "int",
+    "long",
+    "float",
+    "double",
+    "decimal",
+    "boolean",
+    "date",
+    "timestamp",
+    "short",
+    "byte",
+    "binary",
+    "integer",
+    "bigint",
+    "tinyint",
 ]
 
 
@@ -48,11 +62,13 @@ class ColumnDefinition(BaseModel):
     baseColumn: Optional[str] = "id"
     baseColumnType: Optional[str] = "auto"
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def check_constraints(self):
         if self.primary:
-            if 'min' in self.options or 'max' in self.options:
-                raise ValueError(f"Primary column '{self.name}' cannot have min/max options.")
+            if "min" in self.options or "max" in self.options:
+                raise ValueError(
+                    f"Primary column '{self.name}' cannot have min/max options."
+                )
             if self.nullable:
                 raise ValueError(f"Primary column '{self.name}' cannot be nullable.")
         return self
@@ -68,15 +84,17 @@ class TableDefinition(BaseModel):
 # One will have to create a different config for each schema
 class UCSchemaTarget(BaseModel):
     catalog: str
-    schema_: str 
-    output_format: str = "delta" # Default to delta for UC Schema
+    schema_: str
+    output_format: str = "delta"  # Default to delta for UC Schema
 
-    @field_validator('catalog', 'schema_', mode='after')
+    @field_validator("catalog", "schema_", mode="after")
     def validate_identifiers(cls, v):
         if not v.strip():
             raise ValueError("Identifier must be non-empty.")
         if not v.isidentifier():
-            logger.warning(f"'{v}' is not a basic Python identifier. Ensure validity for Unity Catalog.")
+            logger.warning(
+                f"'{v}' is not a basic Python identifier. Ensure validity for Unity Catalog."
+            )
         return v.strip()
 
     def __str__(self):
@@ -87,7 +105,7 @@ class FilePathTarget(BaseModel):
     base_path: str
     output_format: Literal["csv", "parquet"]  # No default, must be specified
 
-    @field_validator('base_path', mode='after')
+    @field_validator("base_path", mode="after")
     def validate_base_path(cls, v):
         if not v.strip():
             raise ValueError("base_path must be non-empty.")
@@ -110,27 +128,33 @@ class DatagenSpec(BaseModel):
     @staticmethod
     def _determine_path_type(path_prefix: str) -> PathType:
         path = path_prefix.strip()
-        if len(path.split('.')) == 3:
+        if len(path.split(".")) == 3:
             return PathType.UC_TABLE
         if path.startswith("/Volumes/"):
             return PathType.UC_VOLUME
-        if path.startswith('/') or path.startswith('\\') or (len(path) > 1 and path[1] == ':'):
+        if (
+            path.startswith("/")
+            or path.startswith("\\")
+            or (len(path) > 1 and path[1] == ":")
+        ):
             return PathType.ABSOLUTE_NON_UC
         return PathType.RELATIVE
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     def validate_paths_and_formats(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         output = values.get("output_destination")
-        intended = values.get("intended_for_databricks") or cls._is_running_on_databricks()
+        intended = (
+            values.get("intended_for_databricks") or cls._is_running_on_databricks()
+        )
 
         if isinstance(output, FilePathTarget):
             path_type = cls._determine_path_type(output.base_path)
             fmt = output.output_format.lower()
-            allowed = {
-                PathType.UC_VOLUME, PathType.RELATIVE, PathType.ABSOLUTE_NON_UC
-            }
+            allowed = {PathType.UC_VOLUME, PathType.RELATIVE, PathType.ABSOLUTE_NON_UC}
             if path_type not in allowed:
-                raise ValueError(f"Invalid path type '{path_type.value}' for FilePathTarget")
+                raise ValueError(
+                    f"Invalid path type '{path_type.value}' for FilePathTarget"
+                )
             values["path_type"] = path_type
 
         elif isinstance(output, UCSchemaTarget):
@@ -141,7 +165,9 @@ class DatagenSpec(BaseModel):
 
     def finalize(self) -> None:
         if self.output_destination is None:
-            raise ValueError("output_destination must be specified before finalization.")
+            raise ValueError(
+                "output_destination must be specified before finalization."
+            )
 
     def display_all_tables(self):
         for table_name, table_def in self.tables.items():
@@ -151,12 +177,14 @@ class DatagenSpec(BaseModel):
                 output = f"{self.output_destination}"
                 display(HTML(f"<strong>Output destination:</strong> {output}"))
             else:
-                display(HTML(
-                    "<strong>Output destination:</strong> "
-                    "<span style='color: red; font-weight: bold;'>None</span><br>"
-                    "<span style='color: gray;'>Set it using the <code>output_destination</code> attribute on your "
-                    "<code>DatagenSpec</code> object (e.g., <code>my_spec.output_destination = UCSchemaTarget(...)</code>).</span>"
-                ))
+                display(
+                    HTML(
+                        "<strong>Output destination:</strong> "
+                        "<span style='color: red; font-weight: bold;'>None</span><br>"
+                        "<span style='color: gray;'>Set it using the <code>output_destination</code> attribute on your "
+                        "<code>DatagenSpec</code> object (e.g., <code>my_spec.output_destination = UCSchemaTarget(...)</code>).</span>"
+                    )
+                )
 
             df = pd.DataFrame([col.dict() for col in table_def.columns])
             try:

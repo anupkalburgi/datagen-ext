@@ -5,7 +5,7 @@ from pydantic import BaseModel, ValidationError
 from datagen_ext.models import DatagenSpec
 
 # --- Config Loader Class ---
-T = TypeVar('T', bound=BaseModel)  # Generic type for the model
+T = TypeVar("T", bound=BaseModel)  # Generic type for the model
 
 
 class ConfigLoader:
@@ -22,7 +22,8 @@ class ConfigLoader:
         """
         if "generator_options" in data_dict:
             print(
-                "Note: 'generator_options' found in input data. It will be ignored if not defined in the Pydantic model (Pydantic v2 default behavior).")
+                "Note: 'generator_options' found in input data. It will be ignored if not defined in the Pydantic model (Pydantic v2 default behavior)."
+            )
             # If you want to strictly remove it, you could do:
             # data_dict.pop("generator_options", None)
         return data_dict
@@ -46,7 +47,9 @@ class ConfigLoader:
         if not isinstance(data_dict, dict):
             raise TypeError("Input data_dict must be a dictionary.")
 
-        processed_data = cls._preprocess_data(data_dict.copy())  # Use a copy to avoid modifying original dict
+        processed_data = cls._preprocess_data(
+            data_dict.copy()
+        )  # Use a copy to avoid modifying original dict
         try:
             return model.model_validate(processed_data)
         except ValidationError as e:
@@ -98,7 +101,7 @@ class ConfigLoader:
             ValidationError: If the data doesn't match the model schema.
         """
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 json_string = f.read()
         except FileNotFoundError:
             print(f"Error: File not found at path '{file_path}'")
@@ -108,4 +111,3 @@ class ConfigLoader:
             raise
 
         return cls.from_json_string(json_string, model)
-

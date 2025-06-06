@@ -3,6 +3,7 @@ try:
 except ImportError:
     # Optionally, check if running in a known environment that should provide Spark
     import os
+
     if "DATABRICKS_RUNTIME_VERSION" not in os.environ:
         # Not in Databricks and pyspark is missing
         raise ImportError(
@@ -19,4 +20,3 @@ __version__ = "0.1.0"
 
 # Optionally expose core functions
 # from .datagen_ext.logic import add_one
-

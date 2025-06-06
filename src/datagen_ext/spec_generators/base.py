@@ -1,6 +1,7 @@
 from datagen_ext.models import DatagenSpec
 from abc import ABC, abstractmethod
 
+
 class AbstractSpecGenerator(ABC):
     @abstractmethod
     def generate_spec(self) -> DatagenSpec:
