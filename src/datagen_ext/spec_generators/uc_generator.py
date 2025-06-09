@@ -15,19 +15,17 @@ from datagen_ext.spec_generators import AbstractSpecGenerator
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import TableInfo, ColumnInfo, TableConstraint
 
+from datagen_ext.text_templates import guess_template
+
 
 # --- User's custom generator ---
 class DatabricksUCSpecGenerator(AbstractSpecGenerator):
-    def __init__(
-        self, tables: List[str], workspace_client: Optional[WorkspaceClient] = None
-    ):
+    def __init__(self, tables: List[str], workspace_client: Optional[WorkspaceClient] = None):
         try:
             self.workspace_client = workspace_client or WorkspaceClient()
         except Exception as e:
             # Catch potential errors during WorkspaceClient instantiation (e.g., config issues)
-            raise SpecGenerationError(
-                f"Failed to initialize WorkspaceClient: {e}"
-            ) from e
+            raise SpecGenerationError(f"Failed to initialize WorkspaceClient: {e}") from e
         if not tables:
             raise SpecGenerationError("Fully qualified table name required")
         self.tables = tables
@@ -50,19 +48,14 @@ class DatabricksUCSpecGenerator(AbstractSpecGenerator):
             SchemaParsingError: If the source type cannot be reliably mapped.
         """
         if not source_type_str:
-            print(
-                f"Warning: Source type for column '{column_name}' is None or empty. Defaulting to 'string'."
-            )
+            print(f"Warning: Source type for column '{column_name}' is None or empty. Defaulting to 'string'.")
             return "string"
 
         s_type = source_type_str.lower().strip()
 
         # Direct matches with DbldatagenBasicType (assuming DbldatagenBasicType is a Literal or Enum)
         # For Literal, we need to check against its __args__
-        if (
-            hasattr(DbldatagenBasicType, "__args__")
-            and s_type in DbldatagenBasicType.__args__
-        ):  # type: ignore
+        if hasattr(DbldatagenBasicType, "__args__") and s_type in DbldatagenBasicType.__args__:  # type: ignore
             return s_type  # type: ignore
 
         # Handle common variations or alternative names from catalogs
@@ -105,9 +98,7 @@ class DatabricksUCSpecGenerator(AbstractSpecGenerator):
 
         # Fallback or raise error if mapping is critical
         # Consider making this stricter by raising an error if a type is truly unknown
-        print(
-            f"Warning: Unmapped source type '{source_type_str}' for column '{column_name}'. Defaulting to 'string'."
-        )
+        print(f"Warning: Unmapped source type '{source_type_str}' for column '{column_name}'. Defaulting to 'string'.")
         return "string"
 
     def _generate_column_definitions(
@@ -131,16 +122,12 @@ class DatabricksUCSpecGenerator(AbstractSpecGenerator):
         pydantic_column_definitions: List[ColumnDefinition] = []
 
         if not raw_column_infos:
-            raise SpecGenerationError(
-                "_generate_column_definitions: No column information provided."
-            )
+            raise SpecGenerationError("_generate_column_definitions: No column information provided.")
 
         for raw_col_info in raw_column_infos:
             col_name = getattr(raw_col_info, "name", None)
             if not col_name:
-                print(
-                    "Warning: Skipping column info object without a 'name' attribute."
-                )  # Or raise SchemaParsingError
+                print("Warning: Skipping column info object without a 'name' attribute.")  # Or raise SchemaParsingError
                 continue
 
             source_type_str: Optional[str] = None
@@ -158,19 +145,13 @@ class DatabricksUCSpecGenerator(AbstractSpecGenerator):
             if not source_type_str:  # Fallback to type_name or type_text
                 source_type_str = getattr(raw_col_info, "type_name", None)
             if not source_type_str:  # Further fallback
-                source_type_str = getattr(
-                    raw_col_info, "type_text", None
-                )  # Default to string if all else fails
+                source_type_str = getattr(raw_col_info, "type_text", None)  # Default to string if all else fails
 
             if not source_type_str:
-                print(
-                    f"Warning: Could not determine source type for column '{col_name}'. Defaulting to 'string'."
-                )
+                print(f"Warning: Could not determine source type for column '{col_name}'. Defaulting to 'string'.")
                 source_type_str = "string"
 
-            datagen_col_type = self._map_source_type_to_datagen_type(
-                source_type_str, col_name
-            )
+            datagen_col_type = self._map_source_type_to_datagen_type(source_type_str, col_name)
 
             is_primary = col_name in primary_key_column_names
 
@@ -212,13 +193,16 @@ class DatabricksUCSpecGenerator(AbstractSpecGenerator):
                 if scale is not None:
                     col_data["scale"] = int(scale)
 
+            elif datagen_col_type == "string" and not is_primary:
+                template = guess_template(col_name)
+                if template:
+                    col_data["options"] = {"template": template}
+
             try:
                 column_def = ColumnDefinition(**col_data)  # type: ignore
                 pydantic_column_definitions.append(column_def)
             except ValidationError as e:
-                raise SpecGenerationError(
-                    f"Validation error for column '{col_name}': {e}"
-                ) from e
+                raise SpecGenerationError(f"Validation error for column '{col_name}': {e}") from e
 
         return pydantic_column_definitions
 
@@ -247,19 +231,13 @@ class DatabricksUCSpecGenerator(AbstractSpecGenerator):
         try:
             table_info: TableInfo = self.workspace_client.tables.get(uc_table_full_name)
         except Exception as e:  # Catching generic exception from SDK
-            raise SpecGenerationError(
-                f"Error fetching table '{uc_table_full_name}' from Unity Catalog: {e}"
-            ) from e
+            raise SpecGenerationError(f"Error fetching table '{uc_table_full_name}' from Unity Catalog: {e}") from e
 
         if not table_info:
-            raise SpecGenerationError(
-                f"Table '{uc_table_full_name}' not found in Unity Catalog."
-            )
+            raise SpecGenerationError(f"Table '{uc_table_full_name}' not found in Unity Catalog.")
 
         if not table_info.columns:
-            raise SpecGenerationError(
-                f"No columns found for table '{uc_table_full_name}'."
-            )
+            raise SpecGenerationError(f"No columns found for table '{uc_table_full_name}'.")
 
         primary_key_column_names: List[str] = []
         if table_info.table_constraints:
@@ -268,15 +246,11 @@ class DatabricksUCSpecGenerator(AbstractSpecGenerator):
                 if constraint and constraint.primary_key_constraint:
                     # Ensure child_columns is not None and is iterable
                     if constraint.primary_key_constraint.child_columns:
-                        primary_key_column_names.extend(
-                            constraint.primary_key_constraint.child_columns
-                        )
+                        primary_key_column_names.extend(constraint.primary_key_constraint.child_columns)
 
         column_definitions = self._generate_column_definitions(
             raw_column_infos=table_info.columns,
-            primary_key_column_names=list(
-                set(primary_key_column_names)
-            ),  # Ensure uniqueness
+            primary_key_column_names=list(set(primary_key_column_names)),  # Ensure uniqueness
         )
 
         try:
@@ -294,12 +268,10 @@ class DatabricksUCSpecGenerator(AbstractSpecGenerator):
     def generate_spec(self) -> DatagenSpec:
         tables_def = {}
         for table in self.tables:
-            table_definition_model: TableDefinition = (
-                self._get_table_definition_from_uc(
-                    uc_table_full_name=table,
-                    default_number_of_rows=5000,
-                    default_partitions=4,
-                )
+            table_definition_model: TableDefinition = self._get_table_definition_from_uc(
+                uc_table_full_name=table,
+                default_number_of_rows=5000,
+                default_partitions=4,
             )
             table_name = table.split(".")[-1]
             tables_def[table_name] = table_definition_model

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "datagen_ext"
-version = "0.0.19"
+version = "0.0.22"
 description = "A new Python project: datagen-ext" # Add a brief description
 readme = "README.md"
 requires-python = ">=3.9.21" # Specify your minimum Python version
@@ -21,11 +21,13 @@ classifiers = [ # Optional: PyPI classifiers
 dependencies = [
     "dbldatagen==0.4.0.post1",
     "pydantic==2.8.2",
+    "rapidfuzz>=3.13.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pyspark==3.5.5",
+    "databricks-sdk==0.40.0",
     "pytest",      # For running tests
     "jupyterlab",  # For notebooks
     "pandas>=2.2.3",
@@ -33,6 +35,10 @@ dev = [
     "pyparsing>=3.2.3",
     # Add other dev tools like black, ruff, mypy here if desired
 ]
+
+[tool.ruff]
+# Allow lines to be as long as 120.
+line-length = 120
 
 # Optional: Define entry points for command-line scripts
 [project.scripts]

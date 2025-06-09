@@ -27,9 +27,7 @@ def sample_config():
                 partitions=2,
                 columns=[
                     ColumnDefinition(name="id", type="string", primary=True),
-                    ColumnDefinition(
-                        name="value", type="integer", options={"min": 1, "max": 100}
-                    ),
+                    ColumnDefinition(name="value", type="integer", options={"min": 1, "max": 100}),
                 ],
             )
         },
@@ -94,9 +92,7 @@ def test_creating_column_definition_with_nullable_primary_key_fails():
     Tests that attempting to create a ColumnDefinition instance with
     primary=True and nullable=True raises a Pydantic ValidationError.
     """
-    with pytest.raises(
-        ValidationError, match="Value error, Primary column 'id' cannot be nullable"
-    ):
+    with pytest.raises(ValidationError, match="Value error, Primary column 'id' cannot be nullable"):
         # This is the action that should trigger the Pydantic validation error
         ColumnDefinition(
             name="id",
@@ -112,9 +108,7 @@ def test_creating_datagenspec_with_nullable_primary_key_fails():
     Tests that attempting to create a DatagenSpec instance containing
     a nullable primary key raises a Pydantic ValidationError.
     """
-    with pytest.raises(
-        ValidationError, match="Value error, Primary column 'id' cannot be nullable"
-    ):
+    with pytest.raises(ValidationError, match="Value error, Primary column 'id' cannot be nullable"):
         DatagenSpec(
             tables={
                 "test_table": TableDefinition(
@@ -177,9 +171,7 @@ def test_write_prepared_data_with_failed_generator(spark_session, sample_config)
     generator = Generator(spark=spark_session)
     prepared_generators = {"test_table": None}  # Simulate a failed generator
 
-    result = generator.write_prepared_data(
-        prepared_generators, output_destination=sample_config.output_destination
-    )
+    result = generator.write_prepared_data(prepared_generators, output_destination=sample_config.output_destination)
     assert result is True  # Should return True as we skip failed generators
 
 
@@ -194,8 +186,6 @@ def test_write_prepared_data_with_write_error(spark_session, sample_config):
         mock_write.mode.return_value = mock_write
         mock_write.save.side_effect = Exception("Write error")
 
-        result = generator.write_prepared_data(
-            prepared_generators, output_destination=sample_config.output_destination
-        )
+        result = generator.write_prepared_data(prepared_generators, output_destination=sample_config.output_destination)
 
         assert result is False  # Should return False on write error

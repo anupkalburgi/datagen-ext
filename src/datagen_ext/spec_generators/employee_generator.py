@@ -2,6 +2,7 @@ from typing import Optional
 from datagen_ext.errors import SpecGenerationError
 from datagen_ext.models import ColumnDefinition, DatagenSpec, TableDefinition
 from datagen_ext.spec_generators import AbstractSpecGenerator
+from datagen_ext.text_templates import COLUMN_TEMPLATES
 
 
 class EmployeeSpecGenerator(AbstractSpecGenerator):
@@ -26,18 +27,10 @@ class EmployeeSpecGenerator(AbstractSpecGenerator):
         Creates a TableDefinition for the employee dataset with predefined columns.
         """
         columns = [
-            ColumnDefinition(
-                name="employee_id", type="int", primary=True, nullable=False
-            ),
-            ColumnDefinition(
-                name="first_name", type="string", options={"template": "\\w{5,10}"}
-            ),
-            ColumnDefinition(
-                name="last_name", type="string", options={"template": "\\w{5,10}"}
-            ),
-            ColumnDefinition(
-                name="email", type="string", options={"template": "\\w.\\w@\\w.com"}
-            ),
+            ColumnDefinition(name="employee_id", type="int", primary=True, nullable=False),
+            ColumnDefinition(name="first_name", type="string", options={"template": COLUMN_TEMPLATES["first_name"]}),
+            ColumnDefinition(name="last_name", type="string", options={"template": COLUMN_TEMPLATES["last_name"]}),
+            ColumnDefinition(name="email", type="string", options={"template": COLUMN_TEMPLATES["email"]}),
             ColumnDefinition(
                 name="department",
                 type="string",
@@ -135,6 +128,4 @@ class EmployeeSpecGenerator(AbstractSpecGenerator):
             return config_obj
 
         except Exception as e:
-            raise SpecGenerationError(
-                f"Failed to generate employee specification: {str(e)}"
-            ) from e
+            raise SpecGenerationError(f"Failed to generate employee specification: {str(e)}") from e

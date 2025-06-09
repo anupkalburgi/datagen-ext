@@ -47,9 +47,7 @@ class ConfigLoader:
         if not isinstance(data_dict, dict):
             raise TypeError("Input data_dict must be a dictionary.")
 
-        processed_data = cls._preprocess_data(
-            data_dict.copy()
-        )  # Use a copy to avoid modifying original dict
+        processed_data = cls._preprocess_data(data_dict.copy())  # Use a copy to avoid modifying original dict
         try:
             return model.model_validate(processed_data)
         except ValidationError as e:

@@ -52,34 +52,6 @@ DbldatagenBasicType = Literal[
 ]
 
 
-class ColumnDefinition(BaseModel):
-    name: str
-    type: Optional[DbldatagenBasicType] = None
-    primary: bool = False
-    options: Optional[Dict[str, Any]] = {}
-    nullable: Optional[bool] = False
-    omit: Optional[bool] = False
-    baseColumn: Optional[str] = "id"
-    baseColumnType: Optional[str] = "auto"
-
-    @model_validator(mode="after")
-    def check_constraints(self):
-        if self.primary:
-            if "min" in self.options or "max" in self.options:
-                raise ValueError(
-                    f"Primary column '{self.name}' cannot have min/max options."
-                )
-            if self.nullable:
-                raise ValueError(f"Primary column '{self.name}' cannot be nullable.")
-        return self
-
-
-class TableDefinition(BaseModel):
-    number_of_rows: int
-    partitions: Optional[int] = 1
-    columns: List[ColumnDefinition]
-
-
 # Note: There is no way to specify the per table output.
 # One will have to create a different config for each schema
 class UCSchemaTarget(BaseModel):
@@ -92,9 +64,7 @@ class UCSchemaTarget(BaseModel):
         if not v.strip():
             raise ValueError("Identifier must be non-empty.")
         if not v.isidentifier():
-            logger.warning(
-                f"'{v}' is not a basic Python identifier. Ensure validity for Unity Catalog."
-            )
+            logger.warning(f"'{v}' is not a basic Python identifier. Ensure validity for Unity Catalog.")
         return v.strip()
 
     def __str__(self):
@@ -115,6 +85,32 @@ class FilePathTarget(BaseModel):
         return f"{self.base_path} (Format: {self.output_format}, Type: File Path)"
 
 
+class ColumnDefinition(BaseModel):
+    name: str
+    type: Optional[DbldatagenBasicType] = None
+    primary: bool = False
+    options: Optional[Dict[str, Any]] = {}
+    nullable: Optional[bool] = False
+    omit: Optional[bool] = False
+    baseColumn: Optional[str] = "id"
+    baseColumnType: Optional[str] = "auto"
+
+    @model_validator(mode="after")
+    def check_constraints(self):
+        if self.primary:
+            if "min" in self.options or "max" in self.options:
+                raise ValueError(f"Primary column '{self.name}' cannot have min/max options.")
+            if self.nullable:
+                raise ValueError(f"Primary column '{self.name}' cannot be nullable.")
+        return self
+
+
+class TableDefinition(BaseModel):
+    number_of_rows: int
+    partitions: Optional[int] = 1
+    columns: List[ColumnDefinition]
+
+
 class DatagenSpec(BaseModel):
     tables: Dict[str, TableDefinition]
     output_destination: Optional[Union[UCSchemaTarget, FilePathTarget]] = None
@@ -132,29 +128,21 @@ class DatagenSpec(BaseModel):
             return PathType.UC_TABLE
         if path.startswith("/Volumes/"):
             return PathType.UC_VOLUME
-        if (
-            path.startswith("/")
-            or path.startswith("\\")
-            or (len(path) > 1 and path[1] == ":")
-        ):
+        if path.startswith("/") or path.startswith("\\") or (len(path) > 1 and path[1] == ":"):
             return PathType.ABSOLUTE_NON_UC
         return PathType.RELATIVE
 
     @model_validator(mode="before")
     def validate_paths_and_formats(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         output = values.get("output_destination")
-        intended = (
-            values.get("intended_for_databricks") or cls._is_running_on_databricks()
-        )
+        intended = values.get("intended_for_databricks") or cls._is_running_on_databricks()
 
         if isinstance(output, FilePathTarget):
             path_type = cls._determine_path_type(output.base_path)
             fmt = output.output_format.lower()
             allowed = {PathType.UC_VOLUME, PathType.RELATIVE, PathType.ABSOLUTE_NON_UC}
             if path_type not in allowed:
-                raise ValueError(
-                    f"Invalid path type '{path_type.value}' for FilePathTarget"
-                )
+                raise ValueError(f"Invalid path type '{path_type.value}' for FilePathTarget")
             values["path_type"] = path_type
 
         elif isinstance(output, UCSchemaTarget):
@@ -165,9 +153,7 @@ class DatagenSpec(BaseModel):
 
     def finalize(self) -> None:
         if self.output_destination is None:
-            raise ValueError(
-                "output_destination must be specified before finalization."
-            )
+            raise ValueError("output_destination must be specified before finalization.")
 
     def display_all_tables(self):
         for table_name, table_def in self.tables.items():
