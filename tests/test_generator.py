@@ -61,30 +61,31 @@ def test_prepare_data_generators(spark_session, sample_config):
     assert prepared_generators["test_table"].rowCount == 100
 
 
-def test_prepare_data_generators_with_invalid_config(spark_session):
-    """Test preparing data generators with invalid config."""
-    generator = Generator(spark=spark_session)
-    invalid_config = DatagenSpec(
-        tables={
-            "test_table": TableDefinition(
-                number_of_rows=100,
-                partitions=2,
-                columns=[
-                    ColumnDefinition(
-                        name="id",
-                        primary=True,  # Missing type for primary key
-                    )
-                ],
-            )
-        },
-        output_destination=FilePathTarget(
-            base_path="/Volume/test_output",
-            output_format="parquet",
-        ),
-    )
-
-    with pytest.raises(ValueError, match="PK 'id' in table 'test_table' missing type"):
-        generator.prepare_data_generators(invalid_config)
+# Todo: Delayed setting of the primary key type  should be possible
+# def test_prepare_data_generators_with_invalid_config(spark_session):
+#     """Test preparing data generators with invalid config."""
+#     generator = Generator(spark=spark_session)
+#     invalid_config = DatagenSpec(
+#         tables={
+#             "test_table": TableDefinition(
+#                 number_of_rows=100,
+#                 partitions=2,
+#                 columns=[
+#                     ColumnDefinition(
+#                         name="id",
+#                         is_primary=True,  # Missing type for primary key
+#                     )
+#                 ],
+#             )
+#         },
+#         output_destination=FilePathTarget(
+#             base_path="/Volume/test_output",
+#             output_format="parquet",
+#         ),
+#     )
+#
+#     with pytest.raises(ValueError, match="PK 'id' in table 'test_table' missing type"):
+#         generator.prepare_data_generators(invalid_config)
 
 
 def test_creating_column_definition_with_nullable_primary_key_fails():
@@ -97,7 +98,7 @@ def test_creating_column_definition_with_nullable_primary_key_fails():
         ColumnDefinition(
             name="id",
             type="string",
-            primary=True,
+            is_primary=True,
             nullable=True,  # This combination is invalid by your model's rules
         )
 
@@ -116,7 +117,7 @@ def test_creating_datagenspec_with_nullable_primary_key_fails():
                     partitions=2,
                     columns=[
                         ColumnDefinition(  # This is the invalid part
-                            name="id", type="string", primary=True, nullable=True
+                            name="id", type="string", is_primary=True, nullable=True
                         )
                     ],
                 )

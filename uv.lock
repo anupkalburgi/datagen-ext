@@ -352,7 +352,7 @@ wheels = [
 
 [[package]]
 name = "datagen-ext"
-version = "0.0.22.2"
+version = "0.0.22.3"
 source = { editable = "." }
 dependencies = [
     { name = "dbldatagen" },
