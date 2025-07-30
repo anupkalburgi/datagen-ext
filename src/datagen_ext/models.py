@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import List, Dict, Optional, Any, Literal, Union
 from pydantic import BaseModel, model_validator, field_validator
 import pandas as pd
@@ -88,7 +90,8 @@ class FilePathTarget(BaseModel):
 class ColumnDefinition(BaseModel):
     name: str
     type: Optional[DbldatagenBasicType] = None
-    primary: bool = False
+    key_ref: Optional[str] = None
+    is_primary: bool = False
     options: Optional[Dict[str, Any]] = {}
     nullable: Optional[bool] = False
     omit: Optional[bool] = False
@@ -97,7 +100,7 @@ class ColumnDefinition(BaseModel):
 
     @model_validator(mode="after")
     def check_constraints(self):
-        if self.primary:
+        if self.is_primary:
             if "min" in self.options or "max" in self.options:
                 raise ValueError(f"Primary column '{self.name}' cannot have min/max options.")
             if self.nullable:
@@ -111,9 +114,16 @@ class TableDefinition(BaseModel):
     columns: List[ColumnDefinition]
 
 
+class KeyDefinition(BaseModel):
+    type: Literal["long", "int", "integer", "string", "date"] | str = "long"
+    options: Dict[str, Any] = {}         # e.g. {"fk_mode": "hash"|"random"}
+    cardinality: Optional[int] = None
+
+
 class DatagenSpec(BaseModel):
     tables: Dict[str, TableDefinition]
     output_destination: Optional[Union[UCSchemaTarget, FilePathTarget]] = None
+    keys: Dict[str, KeyDefinition] = {}
     generator_options: Optional[Dict[str, Any]] = {}
     intended_for_databricks: Optional[bool] = None
 
@@ -150,6 +160,50 @@ class DatagenSpec(BaseModel):
             values["path_type"] = path_type
 
         return values
+
+
+    @model_validator(mode="after")
+    def _validate_keys(cls, spec: "DatagenSpec") -> "DatagenSpec":
+        referenced_keys: set[str] = set()
+        pk_tables: dict[str, list[str]] = {}
+
+        for t_name, t_def in spec.tables.items():
+            for col in t_def.columns:
+                if col.key_ref is None:
+                    continue
+                if col.key_ref not in spec.keys:
+                    raise ValueError(
+                        f"Column '{t_name}.{col.name}' references undefined key_ref '{col.key_ref}'"
+                    )
+                referenced_keys.add(col.key_ref)
+                if col.is_primary:
+                    pk_tables.setdefault(col.key_ref, []).append(t_name)
+
+        # 2.  Derive cardinality if *exactly one* PK table & cardinality missing
+        for kref, tables_with_pk in pk_tables.items():
+            kdef = spec.keys[kref]
+            if kdef.cardinality is None and len(tables_with_pk) == 1:
+                tbl = tables_with_pk[0]
+                kdef.cardinality = spec.tables[tbl].number_of_rows
+                logger.warning(
+                    "Cardinality for key '%s' derived from primary table '%s' (rows=%d)",
+                    kref,
+                    tbl,
+                    kdef.cardinality,
+                )
+
+        # 3.  Validate every referenced key now has cardinality
+        for kref in referenced_keys:
+            if spec.keys[kref].cardinality is None:
+                raise ValueError(
+                    f"Key '{kref}' is referenced in tables but 'cardinality' is still undefined.")
+
+        # 4.  Optional warning for keys never used
+        unused = [k for k in spec.keys if k not in referenced_keys]
+        if unused:
+            logger.info("Keys defined but never referenced: %s", ", ".join(unused))
+
+        return spec
 
     def finalize(self) -> None:
         if self.output_destination is None:

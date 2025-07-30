@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "datagen_ext"
-version = "0.0.22"
+version = "0.0.22.3"
 description = "A new Python project: datagen-ext" # Add a brief description
 readme = "README.md"
 requires-python = ">=3.9.21" # Specify your minimum Python version
@@ -22,6 +22,7 @@ dependencies = [
     "dbldatagen==0.4.0.post1",
     "pydantic==2.8.2",
     "rapidfuzz>=3.13.0",
+    "sqlglot>=26.29.0",
 ]
 
 [project.optional-dependencies]

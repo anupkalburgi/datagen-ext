@@ -146,7 +146,6 @@ class Generator:
                             "integer",
                             "bigint",
                             "short",
-                            "byte",
                         ]:
                             logger.warning(f"PK '{col_name}' type '{col_type}' based on '{INTERNAL_ID_COLUMN_NAME}'.")
 
@@ -159,7 +158,7 @@ class Generator:
                             "template",
                             "values",
                             "dataRange",
-                            "distribution",
+                            "distribution", # TODO: Support it for skew type
                             "expr",
                         ]
                         for opt_key in conflicting_opts_for_pk:

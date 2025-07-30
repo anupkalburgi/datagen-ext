@@ -2,7 +2,7 @@ from typing import Optional
 from datagen_ext.errors import SpecGenerationError
 from datagen_ext.models import ColumnDefinition, DatagenSpec, TableDefinition
 from datagen_ext.spec_generators import AbstractSpecGenerator
-from datagen_ext.text_templates import COLUMN_TEMPLATES
+from datagen_ext.utils.text_templates import COLUMN_TEMPLATES
 
 
 class EmployeeSpecGenerator(AbstractSpecGenerator):

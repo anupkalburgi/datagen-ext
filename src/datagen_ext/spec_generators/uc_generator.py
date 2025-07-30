@@ -13,9 +13,9 @@ from datagen_ext.models import (
 from datagen_ext.spec_generators import AbstractSpecGenerator
 
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.catalog import TableInfo, ColumnInfo, TableConstraint
+from databricks.sdk.service.catalog import TableInfo, ColumnInfo
 
-from datagen_ext.text_templates import guess_template
+from datagen_ext.utils.text_templates import guess_template
 
 
 # --- User's custom generator ---
